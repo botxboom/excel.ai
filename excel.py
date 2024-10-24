@@ -14,6 +14,7 @@ from langchain.globals import set_llm_cache
 from langchain.cache import SQLiteCache
 import time
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+from cache import get_cached_result, cache_result
 
 
 engine = create_engine('sqlite:///excel.db')
@@ -107,7 +108,20 @@ def fetchData(_engine, question):
     except Exception as e:
         print(f"Something went wrong with sqlChain: {e}")
         raise
-          
+  
+def process_question(engine, query):
+    # Check if a similar query exists in the cache
+    cached_result = get_cached_result(query)
+
+    if cached_result:
+        return cached_result
+    else:
+        new_result = fetchData(engine, query)
+        
+        # Cache the new result for future use
+        cache_result(query, new_result)
+
+        return new_result     
 
 def main():
     st.set_page_config(page_title="Chat with your Excel")
@@ -133,9 +147,9 @@ def main():
                 
                 start_time = time.time()
                 try:
-                    response = fetchData(engine, user_question)
+                    response = process_question(engine, user_question)
                 except Exception as e:
-                    st.error("Something went wrong! Please try again.")
+                    st.error(f"Something went wrong! Please try again. {e}")
                     return
                 end_time = time.time()
                 response_time = end_time - start_time 
