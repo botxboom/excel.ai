@@ -1,1 +1,5 @@
 .env
+.my_excel_db.my_excel_db
+.cache.db
+excel.db
+/excel_env

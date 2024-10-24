@@ -20,3 +20,5 @@ faiss-cpu
 langchain-openai
 sqlalchemy 
 langchain
+cachetools
+tenacity
