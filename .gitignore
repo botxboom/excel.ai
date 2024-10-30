@@ -3,3 +3,8 @@
 .cache.db
 excel.db
 /excel_env
+/uploads
+/db
+__pycache__
+.cache.db
+*.pyc

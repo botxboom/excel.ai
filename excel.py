@@ -1,9 +1,7 @@
-from sqlalchemy import create_engine
 import pandas as pd
 from langchain_community.tools.sql_database.tool import SQLDatabase
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
-import streamlit as st
 from langchain.chains.sql_database.query import create_sql_query_chain
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -11,13 +9,12 @@ from langchain_ollama.llms import OllamaLLM
 import os
 import cachetools
 from langchain.globals import set_llm_cache
-from langchain.cache import SQLiteCache
-import time
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from cache import get_cached_result, cache_result
+from engine import  setup_engine, get_engine
+from langchain_community.cache import SQLiteCache
 
 
-engine = create_engine('sqlite:///excel.db')
 
 set_llm_cache(SQLiteCache(database_path=".cache.db"))
 # set_llm_cache(InMemoryCache())
@@ -109,53 +106,25 @@ def fetchData(_engine, question):
         print(f"Something went wrong with sqlChain: {e}")
         raise
   
-def process_question(engine, query):
+def process_question(query):
     # Check if a similar query exists in the cache
     cached_result = get_cached_result(query)
-
+    engine = get_engine()
     if cached_result:
         return cached_result
     else:
-        new_result = fetchData(engine, query)
-        
+        new_result = fetchData(engine.getEngine(), query)
         # Cache the new result for future use
         cache_result(query, new_result)
 
-        return new_result     
+        return new_result  
 
-def main():
-    st.set_page_config(page_title="Chat with your Excel")
-    st.header("Chat with your Excel")
-    # CSV file uploader in Streamlit
-    csv_file = st.file_uploader("Upload your Excel file", type="xlsx")
-
-    if csv_file is not None:
-        excel_data = pd.ExcelFile(csv_file)
-
-        for sheet_name in excel_data.sheet_names:
-            df = pd.read_excel(csv_file, sheet_name=sheet_name)
-
-            df.columns = df.columns.str.replace('\xa0', ' ')
-            df.columns = df.columns.str.strip()
-
-            df.to_sql(sheet_name, con=engine, index=False, if_exists='replace')
-
-        user_question = st.text_input("Ask a question:")
-
-        if user_question is not None and user_question != "":
-            with st.spinner(text="In progress..."):
-                
-                start_time = time.time()
-                try:
-                    response = process_question(engine, user_question)
-                except Exception as e:
-                    st.error(f"Something went wrong! Please try again. {e}")
-                    return
-                end_time = time.time()
-                response_time = end_time - start_time 
-                st.write(f"Time taken: {response_time:.2f} seconds")
-                st.write(response)           
-                
-                
-if __name__ == "__main__":
-    main()
+def upload_excel(file_path):
+    setup_engine(file_path)
+    excel_data = pd.ExcelFile(file_path)
+    engine = get_engine()
+    for sheet_name in excel_data.sheet_names:
+        df = pd.read_excel(excel_data, sheet_name=sheet_name)   
+        df.columns = df.columns.str.replace('\xa0', ' ')
+        df.to_sql(sheet_name, con=engine.getEngine(), index=False, if_exists='replace')
+    return "Excel file uploaded successfully"
