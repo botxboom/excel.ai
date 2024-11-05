@@ -11,7 +11,7 @@ from langchain_ollama.llms import OllamaLLM
 import os
 import cachetools
 from langchain.globals import set_llm_cache
-from langchain.cache import SQLiteCache
+from langchain_community.cache import SQLiteCache
 import time
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from cache import get_cached_result, cache_result
@@ -31,25 +31,36 @@ llm = ChatOpenAI(
     model="Meta-Llama-3.1-405B-Instruct",
 )
 
-prompt = '''You are an expert SQL assistant. Your role is to provide precise and accurate SQL queries based strictly on the user's input. You must not add, change, or improvise any aspect of the query beyond what the user directly requests. You must not make assumptions or attempt to provide additional features or enhancements to the SQL queries. Simply generate the query as instructed, with no context modification or extra elements.
+prompt = '''You are a SQLite expert. Given an input question, first create a syntactically correct SQLite query to run, then look at the results of the query and return the answer to the input question.
+By default, use None for {top_k}, which means retrieve all rows without applying a LIMIT clause. If the user specifies a specific number of examples to obtain, use that value for {top_k} to limit the number of rows retrieved.
+You can order the results to return the most informative data in the database.
+Never query for all columns from a table; query only the columns needed to answer the question. Wrap each column name and table name in double quotes (") exactly as they appear in the database, without adding underscores or modifying spaces or capitalization.
+Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
+Pay attention to use date('now') function to get the current date, if the question involves "today".
+
 Use the following format:
 
-Question: "Question here"
-SQLQuery: "SQL Query to run"
-SQLResult: {top_k}
-Answer: "Final answer here"
+Question: Question here
+SQLQuery: SQL Query to run
+SQLResult: Result of the SQLQuery
+Answer: Final answer here
 
 Only use the following tables:
+{table_info}
 
-{table_info}.
+Question: {input}
+'''
 
-Question: {input}'''
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
 def fetch_query_result(_engine, query):
-    sql_db = SQLDatabase(_engine)
-    result = sql_db.run(query)
-    return result
+    try:    
+        sql_db = SQLDatabase(_engine)
+        result = sql_db.run(query)
+        return result
+    except Exception as e:
+        print(f"Something went wrong with fetch_query_result: {e}")
+        raise
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
@@ -57,7 +68,7 @@ def cleanSQL(input):
     try:
         prompt = ChatPromptTemplate(
             messages=[
-                ("system", "You are an expert SQL assistant. When a user inputs a flawed SQL query, your job is to identify the mistakes and provide a corrected version of the query. The correction should maintain the same intent as the original query but follow proper syntax, logical conditions, and SQL best practices. Just reply with correct queries noting else. Also remove ``` from the start and end of the queries and LIMIT clause from the queries response"),
+                ("system", "You are an expert SQL assistant. When a user inputs a flawed SQL query, your job is to identify the mistakes and provide a corrected version of the query. Wrap each column name and table name in double quotes exactly as they appear in the database, without adding underscores or modifying spaces or capitalization. The correction should maintain the same intent as the original query but follow proper syntax, logical conditions, and SQL best practices. Just reply with correct queries nothing else. Also remove ``` from the start and end of the queries."),
                 ("user", "input: {input}")
             ]
         )
@@ -103,7 +114,6 @@ def fetchData(_engine, question):
         print(sqlQuery)
         sqlResult = fetch_query_result(_engine, sqlQuery)
         result = displayResult(sqlQuery, sqlResult)
-        print(sqlResult)
         return result
     except Exception as e:
         print(f"Something went wrong with sqlChain: {e}")
